@@ -107,6 +107,52 @@ for (let p = 1; p <= 10; p++) {
   } else note("WARN", "liveness", "completed set unavailable: " + done.error);
 }
 
+// ---------------------------------------------------------------- 4d. is supply just echoing demand?
+// A healthy market has supply that exists independently of any particular request. On a
+// dying one, sellers mine the (often expired) request list and re-list it as an offer at
+// the same headline price — so the board grows while nothing new is actually wanted.
+// Detected on opentask first: four fresh listings mirrored older requests, one of them a
+// request that had expired 187 days earlier.
+//
+// Matching on price ALONE is far too loose — my first pass at this reported 7 of 7 when
+// only 4 held up. Require a shared price AND meaningful subject overlap.
+const STOP = new Set(["the", "a", "an", "and", "or", "for", "with", "your", "you", "any", "in",
+  "of", "to", "on", "from", "by", "at", "is", "are", "be", "get", "one", "per", "usd", "usdc",
+  "usdt", "fast", "quick", "ready", "delivery", "delivered", "tested", "service", "services"]);
+const toks = (s) => new Set(String(s).toLowerCase().match(/[a-z]{3,}/g)?.filter((w) => !STOP.has(w)) ?? []);
+const overlap = (a, b) => {
+  const A = toks(a), B = toks(b);
+  if (!A.size || !B.size) return 0;
+  let n = 0; for (const w of A) if (B.has(w)) n++;
+  return n / Math.min(A.size, B.size);
+};
+
+// CRITICAL: compare only against jobs that are genuine REQUESTS. Comparing against every
+// job finds sellers offering similar generic services at the same round price — a
+// completely different (and unremarkable) phenomenon. My first version did exactly that
+// and reported 9 hits on dealwork; eyeballing them showed things like "$10 Python code
+// review" matching "$10 Python bug fix", which is two sellers, not an echo of demand.
+// On a board where 83% of "jobs" are adverts, that check measures nothing.
+const realRequests = jobRows.filter((j) => !SELLER.test(String(j.description || "")));
+const supplyRows = await get("/api/v1/listings?per_page=100");
+if (!supplyRows.error && realRequests.length) {
+  const ls = supplyRows.json?.data ?? [];
+  const priceOf = (x) => Number(x.fixedPrice ?? x.unitPrice ?? x.budgetMax ?? x.budgetMin ?? 0);
+  let mirrors = 0;
+  for (const l of ls) {
+    const p = priceOf(l);
+    if (!p) continue;
+    if (realRequests.some((j) => priceOf(j) === p && overlap(l.title, j.title) >= 0.4)) mirrors++;
+  }
+  const pct = ls.length ? Math.round((mirrors / ls.length) * 100) : 0;
+  note(pct > 20 ? "BAD" : pct > 5 ? "WARN" : "OK", "supply independence",
+    `${mirrors}/${ls.length} listings mirror one of the ${realRequests.length} genuine requests` +
+    ` at the same price and subject (${pct}%)` +
+    (pct > 5 ? " — sellers re-listing requests rather than offering independently" : ""));
+} else if (!realRequests.length) {
+  note("WARN", "supply independence", "no genuine requests to compare against — every job is an advert");
+}
+
 // ---------------------------------------------------------------- 4c. does the API lie quietly?
 // A filter the server does not recognise may be SILENTLY DROPPED, returning the default
 // set that looks like a real answer. This cost me two days and a published wrong number:

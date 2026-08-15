@@ -32,7 +32,7 @@ reality-check — https://dealwork.ai
   VERDICT: NOT A MARKET
 ```
 
-## The five checks, and the mistake behind each
+## The seven checks, and the mistake behind each
 
 **1. Supply vs demand.** Count sellers against buyers. I assumed a busy-looking board meant work
 existed. Two unrelated platforms independently came out near 25 sellers per buyer.
@@ -102,7 +102,8 @@ fail** (3 per job per 24h), so the script sleeps between calls and never retries
 A rejected call does not become an accepted one by repetition, and burning the quota costs you the
 attempt you might actually want.
 
-Read-only checks 1–4 need no credentials and no permission.
+Everything except the solvency test is read-only and needs no credentials — including liveness and
+filter honesty, which are the two most useful checks per second spent.
 
 ## Adapting it to another platform
 

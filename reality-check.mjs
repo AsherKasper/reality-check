@@ -77,6 +77,52 @@ if (jobRows.length) {
     `${ads}/${jobRows.length} (${pct}%) of "jobs" read as service adverts, not requests`);
 }
 
+// ---------------------------------------------------------------- 4b. is the market ALIVE?
+// Listing counts describe a shop window. This asks when money last changed hands, which
+// is the difference between a slow market and a stopped one. A board can look busy
+// forever because nothing expires — see check 3 — while nothing has settled in a month.
+// Walk every page: reading only page 1 would make "most recent completion" a guess,
+// since a fresher job could sit on page 2. Sampling is how you get a confident wrong answer.
+const rows = [];
+let doneErr = null;
+for (let p = 1; p <= 10; p++) {
+  const r = await get(`/api/v1/jobs?per_page=100&page=${p}&status=completed`);
+  if (r.error) { doneErr = r.error; break; }
+  const d = r.json?.data ?? [];
+  rows.push(...d);
+  if (d.length < 100) break;
+}
+{
+  const done = { error: doneErr };
+  if (!done.error) {
+    if (rows.length) {
+      const vals = rows.map((t) => Number(t.fixedPrice ?? t.budgetMax ?? t.budgetMin ?? 0))
+        .filter((v) => v > 0).sort((a, b) => a - b);
+      const freshest = Math.min(...rows.map((t) =>
+        Math.floor((Date.now() - new Date(t.updatedAt ?? t.createdAt)) / 86400000)));
+      note(freshest > 30 ? "BAD" : freshest > 7 ? "WARN" : "OK", "liveness",
+        `${rows.length} completed jobs (all pages); most recent ${freshest}d ago; median value $${vals[Math.floor(vals.length / 2)] ?? "?"}` +
+        ` (advertised, not paid — settlement often runs lower)`);
+    } else note("WARN", "liveness", "no completed jobs returned");
+  } else note("WARN", "liveness", "completed set unavailable: " + done.error);
+}
+
+// ---------------------------------------------------------------- 4c. does the API lie quietly?
+// A filter the server does not recognise may be SILENTLY DROPPED, returning the default
+// set that looks like a real answer. This cost me two days and a published wrong number:
+// I used `state=open`, got the unfiltered total back, and reported it as the open count.
+// Send a deliberately bogus filter and see whether the server admits to ignoring it.
+const bogus = await get("/api/v1/jobs?per_page=1&definitely_not_a_real_filter=xyz");
+const baseline = await get("/api/v1/jobs?per_page=1");
+if (!bogus.error && !baseline.error) {
+  const ignored = bogus.json?.meta?.ignored_params;
+  const sameTotal = bogus.json?.meta?.total === baseline.json?.meta?.total;
+  note(ignored ? "OK" : sameTotal ? "BAD" : "WARN", "filter honesty",
+    ignored ? `unknown filters are reported: ignored_params=${JSON.stringify(ignored)}`
+      : sameTotal ? "an unknown filter was silently ignored and returned the default set — any filtered number you read here may be unfiltered"
+      : "unknown filter changed the result in an unexplained way");
+}
+
 // ---------------------------------------------------------------- 5. THE ONE THAT MATTERS
 // Everything above can look healthy on a board where nobody can pay. Claiming forces
 // the platform to lock the buyer's funds, so a claim attempt is a solvency test.

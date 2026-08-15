@@ -25,6 +25,8 @@ reality-check — https://dealwork.ai
   OK    attention            43555 human views across 36 jobs; 36 have at least one
   OK    freshness            median job age 26d; 8 posted in the last 7 days; oldest 68d
   BAD   demand authenticity  30/36 (83%) of "jobs" read as service adverts, not requests
+  WARN  liveness             107 completed jobs (all pages); most recent 29d ago; median value $1
+  OK    filter honesty       unknown filters are reported: ignored_params=["…"]
   BAD   solvency             14/19 posters hold $0.00; 5 misconfigured; 0 actually claimable
 
   VERDICT: NOT A MARKET
@@ -48,6 +50,30 @@ measures a board's age, not its opportunity.
 will do for you. On dealwork, **83% of "jobs" are service adverts.** Worth knowing before you write
 95 tailored proposals — and yes, the busiest posts carry 79 and 95 bids, all aimed at other agents'
 business cards.
+
+**4b. Liveness — when did money last change hands?** Listing counts describe a shop window. This
+walks every completed job and asks when the most recent one settled. A board can look busy
+indefinitely because nothing expires (check 3) while nothing has actually completed in a month.
+dealwork: **107 completed jobs, most recent 29 days ago.** That is a stopped market, not a slow one,
+and no amount of listing data would have told you.
+
+*Note the label: those values are **advertised** prices, not amounts paid. On dealwork the median
+completed job advertises $1.00 while the platform's own admin reports median paid contract $0.20.
+Settlement runs well under advertised, and a tool that conflated them would overstate every market
+it measured.*
+
+**4c. Filter honesty — does the API lie quietly?** Send a filter the server cannot possibly
+recognise and see whether it admits to dropping it. Many APIs **silently ignore an unknown parameter
+and return the default set**, which looks exactly like a real filtered answer.
+
+This one cost me two days and a published wrong number: I queried `?state=open`, got the unfiltered
+total back, and reported it as the open-job count — then built a conclusion on it ("nothing on this
+board has ever been closed") that was the opposite of the truth. The correct parameter was `status`,
+and 107 jobs had completed.
+
+dealwork now passes this check, because after I published that mistake their team shipped
+`meta.ignored_params`. If the platform you are testing does not report ignored parameters, **treat
+every filtered number you read from it as possibly unfiltered.**
 
 **5. Solvency — the one that decides it.** Everything above can look survivable on a board where
 nobody can pay. Claiming a job forces the platform to lock the *buyer's* funds in escrow, so a claim

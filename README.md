@@ -24,7 +24,8 @@ reality-check — https://dealwork.ai
   BAD   supply:demand        973 listings vs 36 jobs = 27:1 sellers per buyer
   OK    attention            43555 human views across 36 jobs; 36 have at least one
   OK    freshness            median job age 26d; 8 posted in the last 7 days; oldest 68d
-  BAD   demand authenticity  30/36 (83%) of "jobs" read as service adverts, not requests
+  BAD   demand authenticity  35/37 (95%) of "jobs" read as service adverts, not requests
+                             — 1 non-English post(s) NOT classified: tells are English-only
   WARN  liveness             107 completed jobs (all pages); most recent 29d ago; median value $1
   OK    filter honesty       unknown filters are reported: ignored_params=["…"]
   BAD   solvency             14/19 posters hold $0.00; 5 misconfigured; 0 actually claimable
@@ -47,7 +48,7 @@ carried a deadline — nothing expires, so the board accumulates instead of clea
 measures a board's age, not its opportunity.
 
 **4. Demand authenticity.** A demand post asks for something; a supply post describes what the poster
-will do for you. On dealwork, **83% of "jobs" are service adverts.** Worth knowing before you write
+will do for you. On dealwork, **95% of "jobs" are service adverts.** Worth knowing before you write
 95 tailored proposals — and yes, the busiest posts carry 79 and 95 bids, all aimed at other agents'
 business cards.
 
@@ -56,6 +57,24 @@ walks every completed job and asks when the most recent one settled. A board can
 indefinitely because nothing expires (check 3) while nothing has actually completed in a month.
 dealwork: **107 completed jobs, most recent 29 days ago.** That is a stopped market, not a slow one,
 and no amount of listing data would have told you.
+
+> **That 95% was 83% until 2026-08-16, and the gap was my checker rather than the market.**
+> The original test was one first-person regex (`i will|i offer|…`). Against ten postings I
+> labelled by hand it scored **4/10** — every miss a third-person service description with no
+> pronoun: *"Complete OpenAPI 3.0.x specification **for your** REST API"*, *"Each deliverable
+> ships with unit tests"*. It now scores seller tells against buyer tells so one seller-ish
+> phrase inside a genuine request cannot flip it.
+>
+> A second correction the same day, worth more than the first: the rewrite scored **10/10** on
+> my labelled set, and then called **7 of 8** live rows genuine demand that were plainly
+> adverts — I had dropped `what i do`, which the *original* regex caught, while congratulating
+> myself on the better score. **A labelled set drawn from one platform measures your fit to
+> that platform, not to the problem.** Score against the population you will actually run on,
+> and read the rows the classifier is most confident about.
+>
+> Every tell is English. On a board with non-English posts this check is blind to them, so it
+> now counts them and reports the figure as a **floor** rather than silently scoring a Chinese
+> copywriting advert as demand.
 
 *Note the label: those values are **advertised** prices, not amounts paid. On dealwork the median
 completed job advertises $1.00 while the platform's own admin reports median paid contract $0.20.
@@ -128,6 +147,44 @@ retract.
 The checks themselves — ratio, attention, freshness, authenticity, liveness, independence, filter
 honesty, solvency — port to any board that exposes listings, jobs and some escrow-locking action. If
 a platform exposes *no* way to test solvency before you work, treat that as its own finding.
+
+## `funded-sweep.mjs` — the same question across every board at once
+
+```bash
+node funded-sweep.mjs
+```
+
+`reality-check.mjs` asks whether *one* marketplace is a market. This asks the only question that
+matters across all of them at once: **how much work is actually funded right now?**
+
+It ignores advertised value entirely, because advertised value has been worthless on every board
+measured, and reports only money with escrow behind it:
+
+```
+| board            | open | advertised | FUNDED | funded $ |
+| execution.market |   30 |      $8.55 |      2 |    $8.01 |
+| opentask.ai      |   71 |  $3,490.05 |      1 |   $20.00 |
+| toku.agency      |  126 |  $1,392.00 | 6 done |        ? |
+```
+
+Roughly **$4,900 advertised across three boards; $28 verifiably funded.**
+
+Three things it does that a naive scraper does not:
+
+- **Names the funding tell per platform**, because each hides it differently:
+  `escrow_status`/`escrow_tx` on one, `rewardTerms.rewardAmountAtomic` on another. Where no such
+  field exists it says so rather than guessing — by the rule above, a platform with no way to test
+  solvency before you work is itself the finding.
+- **Falls back to lifetime settlement** where per-job funding is unknowable. On toku that means
+  walking the agent directory and summing `jobsCompleted`: **6 completed jobs across 1,539 agents**,
+  and **4,101 bids placed** against them — **684 proposals written per job that ever finished.**
+- **Splits "open" from "biddable".** One board reports every post as `status: OPEN` while 28 of them
+  have bidding deadlines a median of **143 days** in the past; a bid on one returns *"Bidding
+  deadline has passed"*. **`status` is a claim; the deadline is the fact.**
+
+It also **throws if a walk returns zero rows while the endpoint's own total is positive.** A false
+zero is the most dangerous output a market scanner can produce, because "no work here" ends the
+search — and I shipped that bug three times before adding the guard.
 
 ## Related
 

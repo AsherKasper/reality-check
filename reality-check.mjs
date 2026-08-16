@@ -108,13 +108,64 @@ if (jobRows.length) {
 }
 
 // ---------------------------------------------------------------- 4. are the "jobs" actually jobs?
-// A demand post asks for something. A supply post describes what the poster will do.
-const SELLER = /\b(i will|i can |i offer|i provide|i deliver|i build|i write|i review|i audit|my services?|hire me|turnaround|available 24\/7|what i do)\b/i;
+// A demand post asks for something. A supply post describes what the poster will do FOR YOU.
+//
+// CORRECTION 2026-08-16: this was a single first-person regex (`i will|i offer|…`). Tested
+// against 10 postings I had labelled by hand it scored 4/10, and every miss was the same
+// shape — a third-person service description with no pronoun at all:
+//
+//   "Complete OpenAPI 3.0.x specification FOR YOUR REST API…"
+//   "Custom Telegram bot development for trading signals…"
+//   "Reliable, tested Python scripts … Each deliverable ships with unit tests"
+//
+// Those are adverts, and the old check called them genuine demand — which inflates the
+// apparent buyer side, the exact error this check exists to catch. Now scored in both
+// directions so one seller-ish phrase inside a real request cannot flip it. Scores 10/10
+// on the same labelled set, with no false positives on genuine requests.
+const SELLER_TELLS = [
+  /\bfor your\b/i, /\byour (existing|current) \w+/i,
+  /\bi (will|can|offer|provide|deliver|build|write|generate|create)\b/i,
+  /\b(we|our) (offer|provide|deliver|build|services)\b/i,
+  /\bmy services?\b/i, /\bhire me\b/i,
+  /\bcustom [\w-]+( [\w-]+){0,2} (development|services|integration|solutions|bot)\b/i,
+  /\b(platform|production|enterprise)-ready\b/i,
+  /\bservices include\b/i, /\b\d+ ?h(ours?)? delivery\b/i, /\bturnaround\b/i,
+  /\bdelivered in \d/i, /\beach deliverable\b/i, /\bships with\b/i,
+  /\bexperience:/i, /\bportfolio\b/i, /\bavailable 24\/7\b/i,
+  // Added after the first rewrite regressed on live data — see the note below.
+  /\bwhat i do\b/i, /\boffering:/i, /\b(agent|bot|service) for\b/i,
+  /\b\w+ service:/i, /\bmy (rates?|pricing)\b/i, /\bfixed-scope\b/i,
+  /\b(i|we) (accept|support|handle)\b/i, /\bper (word|page|script|report)\b/i,
+];
+// A second correction, same day. The rewrite above scored 10/10 on a set I had labelled by
+// hand — from ONE platform. Run against a different live board it called 8 of 37 rows genuine
+// demand, and reading them showed 7 were adverts: "WHAT I DO:", "Autonomous AI agent
+// offering:", "AI agent for web scraping". I had dropped `what i do`, which the ORIGINAL
+// regex caught, while congratulating myself on a better score.
+//
+// The lesson is not about regexes. **A labelled set drawn from one platform measures your fit
+// to that platform, not to the problem.** Score against the population you will actually run
+// on, and read the rows the classifier is most confident about — the ones it calls genuine.
+const BUYER_TELLS = [
+  /\b(i|we) need\b/i, /\bneed(ed)? (a|an|to|someone)\b/i, /\blooking for\b/i,
+  /\bplease (write|build|create|make|produce)\b/i, /\bshould (handle|include|be|support)\b/i,
+  /\bmust (handle|include|be|support|analyse|analyze)\b/i,
+  /\brequirements?\b/i, /\bdeliverable is\b/i, /\bwe want\b/i, /\bcreate a\b/i,
+];
+const sellerScore = (s) =>
+  SELLER_TELLS.filter((r) => r.test(s)).length - BUYER_TELLS.filter((r) => r.test(s)).length;
+const SELLER = { test: (s) => sellerScore(String(s)) > 0 };
+// Every tell above is English. On a board with non-English posts this check is blind to them
+// and will silently score an advert as genuine demand — I watched it do exactly that to a
+// Chinese-language copywriting advert. Count them and say so rather than quietly miscounting.
+const nonLatin = (s) => (String(s).match(/[　-鿿Ѐ-ӿ؀-ۿ]/g) || []).length > 8;
 if (jobRows.length) {
   const ads = jobRows.filter((j) => SELLER.test(String(ADAPTER.description(j)))).length;
   const pct = Math.round((ads / jobRows.length) * 100);
+  const foreign = jobRows.filter((j) => nonLatin(ADAPTER.description(j))).length;
   note(pct > 50 ? "BAD" : pct > 20 ? "WARN" : "OK", "demand authenticity",
-    `${ads}/${jobRows.length} (${pct}%) of "jobs" read as service adverts, not requests`);
+    `${ads}/${jobRows.length} (${pct}%) of "jobs" read as service adverts, not requests` +
+    (foreign ? ` — ${foreign} non-English post(s) NOT classified: the tells are English-only, so this is a floor` : ""));
 }
 
 // ---------------------------------------------------------------- 4b. is the market ALIVE?

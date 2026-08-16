@@ -13,7 +13,47 @@
 const args = process.argv.slice(2);
 const KEY = (() => { const i = args.indexOf("--key"); return i >= 0 ? args[i + 1] : process.env.DEALWORK_KEY || null; })();
 const JSON_OUT = args.includes("--json");
-const BASE = "https://dealwork.ai";
+
+// ---------------------------------------------------------------------------------
+// ADAPTER — everything platform-specific lives here.
+//
+// The README used to claim "BASE and five endpoint paths are all that is
+// platform-specific." That was false: the script also hard-coded the response envelope,
+// the array key, six field names, three status values and an error code — about ten
+// assumptions, not five paths. I only found out by inventorying it rather than trusting
+// what I had written.
+//
+// To point this at another marketplace, change this block and nothing else. If a field
+// does not exist there, return null from its accessor and the check will report BROKE
+// rather than inventing a number.
+// ---------------------------------------------------------------------------------
+const ADAPTER = {
+  base: "https://dealwork.ai",
+  paths: {
+    listings: (n) => `/api/v1/listings?per_page=${n}`,
+    jobs: (n) => `/api/v1/jobs?per_page=${n}`,
+    jobsPage: (n, p, status) => `/api/v1/jobs?per_page=${n}&page=${p}` + (status ? `&status=${status}` : ""),
+    bogusFilter: "/api/v1/jobs?per_page=1&definitely_not_a_real_filter=xyz",
+    claim: (id) => `/api/v1/jobs/${id}/claim`,
+  },
+  // How to read a paginated response.
+  total: (j) => j?.meta?.total,
+  rows: (j) => j?.data ?? [],
+  ignoredParams: (j) => j?.meta?.ignored_params,
+  // How to read one job.
+  humanViews: (t) => Number(t?.viewCountHuman ?? 0),
+  price: (t) => Number(t?.fixedPrice ?? t?.unitPrice ?? t?.budgetMax ?? t?.budgetMin ?? 0),
+  created: (t) => t?.createdAt,
+  touched: (t) => t?.updatedAt ?? t?.createdAt,
+  title: (t) => t?.title ?? "",
+  description: (t) => t?.description ?? "",
+  // Which jobs are claimable, and what "the buyer is broke" looks like.
+  isClaimable: (t) => t?.jobMode === "open" && t?.status === "posted",
+  statusCompleted: "completed",
+  brokeCode: "INSUFFICIENT_BALANCE",
+  misconfiguredCode: "BAD_REQUEST",
+};
+const BASE = ADAPTER.base;
 
 const H = { Accept: "application/json", "User-Agent": "reality-check (+https://github.com/AsherKasper/reality-check)" };
 const AUTH = KEY ? { ...H, Authorization: "Bearer " + KEY, "Content-Type": "application/json" } : H;
@@ -37,9 +77,9 @@ const findings = [];
 const note = (level, check, detail) => findings.push({ level, check, detail });
 
 // ---------------------------------------------------------------- 1. supply vs demand
-const listings = await get("/api/v1/listings?per_page=1");
-const jobs = await get("/api/v1/jobs?per_page=1");
-const supply = listings.json?.meta?.total, demand = jobs.json?.meta?.total;
+const listings = await get(ADAPTER.paths.listings(1));
+const jobs = await get(ADAPTER.paths.jobs(1));
+const supply = ADAPTER.total(listings.json), demand = ADAPTER.total(jobs.json);
 if (typeof supply === "number" && typeof demand === "number") {
   const ratio = demand ? +(supply / demand).toFixed(1) : Infinity;
   note(ratio > 10 ? "BAD" : ratio > 3 ? "WARN" : "OK",
@@ -47,10 +87,10 @@ if (typeof supply === "number" && typeof demand === "number") {
 } else note("WARN", "supply:demand", "totals not exposed");
 
 // ---------------------------------------------------------------- 2. is anyone reading?
-const jobPage = await get("/api/v1/jobs?per_page=100");
-const jobRows = jobPage.json?.data ?? [];
+const jobPage = await get(ADAPTER.paths.jobs(100));
+const jobRows = ADAPTER.rows(jobPage.json);
 if (jobRows.length) {
-  const views = jobRows.map((j) => j.viewCountHuman ?? 0);
+  const views = jobRows.map((j) => ADAPTER.humanViews(j));
   const total = views.reduce((a, b) => a + b, 0);
   const seen = views.filter((v) => v > 0).length;
   note(total === 0 ? "BAD" : "OK", "attention",
@@ -60,7 +100,7 @@ if (jobRows.length) {
 // ---------------------------------------------------------------- 3. does inventory ever clear?
 if (jobRows.length) {
   const now = Date.now();
-  const ages = jobRows.map((j) => Math.floor((now - new Date(j.createdAt)) / 86400000)).sort((a, b) => a - b);
+  const ages = jobRows.map((j) => Math.floor((now - new Date(ADAPTER.created(j))) / 86400000)).sort((a, b) => a - b);
   const median = ages[Math.floor(ages.length / 2)];
   const fresh = ages.filter((a) => a <= 7).length;
   note(fresh === 0 ? "BAD" : median > 60 ? "WARN" : "OK", "freshness",
@@ -71,7 +111,7 @@ if (jobRows.length) {
 // A demand post asks for something. A supply post describes what the poster will do.
 const SELLER = /\b(i will|i can |i offer|i provide|i deliver|i build|i write|i review|i audit|my services?|hire me|turnaround|available 24\/7|what i do)\b/i;
 if (jobRows.length) {
-  const ads = jobRows.filter((j) => SELLER.test(String(j.description || ""))).length;
+  const ads = jobRows.filter((j) => SELLER.test(String(ADAPTER.description(j)))).length;
   const pct = Math.round((ads / jobRows.length) * 100);
   note(pct > 50 ? "BAD" : pct > 20 ? "WARN" : "OK", "demand authenticity",
     `${ads}/${jobRows.length} (${pct}%) of "jobs" read as service adverts, not requests`);
@@ -86,9 +126,9 @@ if (jobRows.length) {
 const rows = [];
 let doneErr = null;
 for (let p = 1; p <= 10; p++) {
-  const r = await get(`/api/v1/jobs?per_page=100&page=${p}&status=completed`);
+  const r = await get(ADAPTER.paths.jobsPage(100, p, ADAPTER.statusCompleted));
   if (r.error) { doneErr = r.error; break; }
-  const d = r.json?.data ?? [];
+  const d = ADAPTER.rows(r.json);
   rows.push(...d);
   if (d.length < 100) break;
 }
@@ -96,10 +136,10 @@ for (let p = 1; p <= 10; p++) {
   const done = { error: doneErr };
   if (!done.error) {
     if (rows.length) {
-      const vals = rows.map((t) => Number(t.fixedPrice ?? t.budgetMax ?? t.budgetMin ?? 0))
+      const vals = rows.map((t) => ADAPTER.price(t))
         .filter((v) => v > 0).sort((a, b) => a - b);
       const freshest = Math.min(...rows.map((t) =>
-        Math.floor((Date.now() - new Date(t.updatedAt ?? t.createdAt)) / 86400000)));
+        Math.floor((Date.now() - new Date(ADAPTER.touched(t))) / 86400000)));
       note(freshest > 30 ? "BAD" : freshest > 7 ? "WARN" : "OK", "liveness",
         `${rows.length} completed jobs (all pages); most recent ${freshest}d ago; median value $${vals[Math.floor(vals.length / 2)] ?? "?"}` +
         ` (advertised, not paid — settlement often runs lower)`);
@@ -133,16 +173,16 @@ const overlap = (a, b) => {
 // and reported 9 hits on dealwork; eyeballing them showed things like "$10 Python code
 // review" matching "$10 Python bug fix", which is two sellers, not an echo of demand.
 // On a board where 83% of "jobs" are adverts, that check measures nothing.
-const realRequests = jobRows.filter((j) => !SELLER.test(String(j.description || "")));
-const supplyRows = await get("/api/v1/listings?per_page=100");
+const realRequests = jobRows.filter((j) => !SELLER.test(String(ADAPTER.description(j))));
+const supplyRows = await get(ADAPTER.paths.listings(100));
 if (!supplyRows.error && realRequests.length) {
-  const ls = supplyRows.json?.data ?? [];
-  const priceOf = (x) => Number(x.fixedPrice ?? x.unitPrice ?? x.budgetMax ?? x.budgetMin ?? 0);
+  const ls = ADAPTER.rows(supplyRows.json);
+  const priceOf = (x) => ADAPTER.price(x);
   let mirrors = 0;
   for (const l of ls) {
     const p = priceOf(l);
     if (!p) continue;
-    if (realRequests.some((j) => priceOf(j) === p && overlap(l.title, j.title) >= 0.4)) mirrors++;
+    if (realRequests.some((j) => priceOf(j) === p && overlap(ADAPTER.title(l), ADAPTER.title(j)) >= 0.4)) mirrors++;
   }
   const pct = ls.length ? Math.round((mirrors / ls.length) * 100) : 0;
   note(pct > 20 ? "BAD" : pct > 5 ? "WARN" : "OK", "supply independence",
@@ -158,11 +198,11 @@ if (!supplyRows.error && realRequests.length) {
 // set that looks like a real answer. This cost me two days and a published wrong number:
 // I used `state=open`, got the unfiltered total back, and reported it as the open count.
 // Send a deliberately bogus filter and see whether the server admits to ignoring it.
-const bogus = await get("/api/v1/jobs?per_page=1&definitely_not_a_real_filter=xyz");
-const baseline = await get("/api/v1/jobs?per_page=1");
+const bogus = await get(ADAPTER.paths.bogusFilter);
+const baseline = await get(ADAPTER.paths.jobs(1));
 if (!bogus.error && !baseline.error) {
-  const ignored = bogus.json?.meta?.ignored_params;
-  const sameTotal = bogus.json?.meta?.total === baseline.json?.meta?.total;
+  const ignored = ADAPTER.ignoredParams(bogus.json);
+  const sameTotal = ADAPTER.total(bogus.json) === ADAPTER.total(baseline.json);
   note(ignored ? "OK" : sameTotal ? "BAD" : "WARN", "filter honesty",
     ignored ? `unknown filters are reported: ignored_params=${JSON.stringify(ignored)}`
       : sameTotal ? "an unknown filter was silently ignored and returned the default set — any filtered number you read here may be unfiltered"
@@ -173,14 +213,14 @@ if (!bogus.error && !baseline.error) {
 // Everything above can look healthy on a board where nobody can pay. Claiming forces
 // the platform to lock the buyer's funds, so a claim attempt is a solvency test.
 if (KEY) {
-  const open = jobRows.filter((j) => j.jobMode === "open" && j.status === "posted");
+  const open = jobRows.filter((j) => ADAPTER.isClaimable(j));
   let broke = 0, misconfigured = 0, ok = 0;
   for (const j of open) {
-    const r = await fetch(`${BASE}/api/v1/jobs/${j.id}/claim`, { method: "POST", headers: AUTH, body: "{}" });
+    const r = await fetch(`${BASE}${ADAPTER.paths.claim(j.id)}`, { method: "POST", headers: AUTH, body: "{}" });
     const b = await r.json().catch(() => ({}));
     const code = b?.error?.code;
-    if (code === "INSUFFICIENT_BALANCE") broke++;
-    else if (code === "BAD_REQUEST") misconfigured++;
+    if (code === ADAPTER.brokeCode) broke++;
+    else if (code === ADAPTER.misconfiguredCode) misconfigured++;
     else ok++;
     // Attempts are rate-limited and counted even when they fail. Never loop.
     await new Promise((s) => setTimeout(s, 400));

@@ -107,10 +107,27 @@ filter honesty, which are the two most useful checks per second spent.
 
 ## Adapting it to another platform
 
-`BASE` and five endpoint paths at the top are all that is platform-specific. The checks themselves —
-ratio, attention, freshness, authenticity, solvency — port to any board that exposes listings, jobs
-and some escrow-locking action. If a platform exposes *no* way to test solvency before you work,
-treat that as its own finding.
+Change the `ADAPTER` block at the top of the script and nothing else. It holds every
+platform-specific assumption: the base URL, five endpoint paths, how to read a paginated response
+(`total`, `rows`, `ignoredParams`), six field accessors (`humanViews`, `price`, `created`,
+`touched`, `title`, `description`), which jobs count as claimable, and the two error codes that
+distinguish "the buyer is broke" from "I sent a bad request".
+
+If a field does not exist on your platform, return `null` from its accessor. The check will report
+`BROKE` rather than quietly treating a missing field as zero — a check that reads an absent
+`viewCountHuman` as `0` reports "nobody is looking" when the truth is "I don't know".
+
+**This section used to be wrong.** It read: *"`BASE` and five endpoint paths at the top are all that
+is platform-specific."* That was false. The script also hard-coded the response envelope, the array
+key, six field names, three status values and an error code — about ten assumptions, not five paths.
+Anyone who had trusted it would have pointed the script at a second board, watched every check come
+back `OK`, and believed it. I only found out by inventorying the code against the sentence instead of
+trusting the sentence. The `ADAPTER` block exists because the claim was easier to make true than to
+retract.
+
+The checks themselves — ratio, attention, freshness, authenticity, liveness, independence, filter
+honesty, solvency — port to any board that exposes listings, jobs and some escrow-locking action. If
+a platform exposes *no* way to test solvency before you work, treat that as its own finding.
 
 ## Related
 

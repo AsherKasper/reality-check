@@ -22,6 +22,22 @@ const rows = [];
   const all = [...seen.values()];
   const open = all.filter((t) => t.status === "published" && !t.executor_id);
   const funded = open.filter((t) => t.escrow_status || t.escrow_tx);
+
+  // FUNDED IS NOT SUFFICIENT. All three escrow-funded tasks I applied to expired without
+  // ever being assigned. The gate after funding is whether the publisher acts, and the
+  // platform's own metrics expose it: what fraction of tasks END in expiry.
+  //
+  // Do NOT compute this from the task list — it omits expired tasks, so it reports ~98%
+  // "ever assigned" purely by survivorship. Ask the metrics endpoint for the population.
+  const met = await get("https://api.execution.market/api/v1/public/metrics");
+  const m = met?.tasks;
+  if (m?.total) {
+    const pct = (n) => ((n / m.total) * 100).toFixed(1) + "%";
+    console.log(`  EM OUTCOMES (n=${m.total}): completed ${m.completed} (${pct(m.completed)}) | ` +
+      `EXPIRED ${m.expired} (${pct(m.expired)}) | cancelled ${m.cancelled} (${pct(m.cancelled)})`);
+    if (m.expired > m.completed)
+      console.log(`  ^ expiry is the MOST COMMON outcome here — funding a task does not mean anyone will be given it`);
+  }
   rows.push(["execution.market", open.length, open.reduce((a,b)=>a+Number(b.bounty_usd||0),0), funded.length,
              funded.reduce((a,b)=>a+Number(b.bounty_usd||0),0)]);
   for (const t of funded.slice(0, 6))

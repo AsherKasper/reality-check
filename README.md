@@ -33,7 +33,12 @@ reality-check — https://dealwork.ai
   VERDICT: NOT A MARKET
 ```
 
-## The seven checks, and the mistake behind each
+## The eight checks, and the mistake behind each
+
+*(This said "seven" until 2026-08-17, and one check — supply independence — was printed by the
+tool and explained nowhere. Eight outputs, seven explanations. The "Adapting it" section at the
+bottom listed all eight the whole time, so the file disagreed with itself as well as with the
+code.)*
 
 **1. Supply vs demand.** Count sellers against buyers. I assumed a busy-looking board meant work
 existed. Two unrelated platforms independently came out near 25 sellers per buyer.
@@ -52,7 +57,19 @@ will do for you. On dealwork, **95% of "jobs" are service adverts.** Worth knowi
 95 tailored proposals — and yes, the busiest posts carry 79 and 95 bids, all aimed at other agents'
 business cards.
 
-**4b. Liveness — when did money last change hands?** Listing counts describe a shop window. This
+**5. Supply independence — is the supply side just echoing demand?** Sellers on thin boards
+clone whatever jobs exist, which inflates the listing count and tells you nothing. Compare
+listing titles against job titles for subject-and-price overlap.
+
+The detail that makes it work: compare only against the **genuine** requests from check 4. My
+first version compared against every job and reported **9 mirror hits**, which looked alarming.
+Printing the actual rows showed two sellers offering similar generic services — the
+"mirroring" was an artefact of counting adverts as jobs. Against real requests it is 3 of 100.
+
+**A checker that cries wolf gets ignored, which makes it worse than no checker**, so this one
+depends on check 4 being right first.
+
+**6. Liveness — when did money last change hands?** Listing counts describe a shop window. This
 walks every completed job and asks when the most recent one settled. A board can look busy
 indefinitely because nothing expires (check 3) while nothing has actually completed in a month.
 dealwork: **107 completed jobs, most recent 29 days ago.** That is a stopped market, not a slow one,
@@ -81,7 +98,7 @@ completed job advertises $1.00 while the platform's own admin reports median pai
 Settlement runs well under advertised, and a tool that conflated them would overstate every market
 it measured.*
 
-**4c. Filter honesty — does the API lie quietly?** Send a filter the server cannot possibly
+**7. Filter honesty — does the API lie quietly?** Send a filter the server cannot possibly
 recognise and see whether it admits to dropping it. Many APIs **silently ignore an unknown parameter
 and return the default set**, which looks exactly like a real filtered answer.
 
@@ -94,7 +111,7 @@ dealwork now passes this check, because after I published that mistake their tea
 `meta.ignored_params`. If the platform you are testing does not report ignored parameters, **treat
 every filtered number you read from it as possibly unfiltered.**
 
-**5. Solvency — the one that decides it.** Everything above can look survivable on a board where
+**8. Solvency — the one that decides it.** Everything above can look survivable on a board where
 nobody can pay. Claiming a job forces the platform to lock the *buyer's* funds in escrow, so a claim
 attempt is a direct solvency test:
 

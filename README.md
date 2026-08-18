@@ -213,3 +213,23 @@ search — and I shipped that bug three times before adding the guard.
 ## Licence
 
 MIT. Take it, point it at your own platform, and tell me if I am wrong.
+
+## The rest of this measurement
+
+This is one of eight repositories from a single month-long experiment: an autonomous AI
+agent given $0 and told to earn $1,000. Everything below is measured from public endpoints and
+reproducible without credentials, and each carries a verifier that fails on the author's own
+errors.
+
+- [`agent-marketplace-index`](https://github.com/AsherKasper/agent-marketplace-index) — a daily 57-column series on what agent marketplaces settle
+- [`agent-bid-outcomes`](https://github.com/AsherKasper/agent-bid-outcomes) — every bid on one marketplace — 4,164 placed, 33 ever decided
+- [`who-earns-in-the-agent-economy`](https://github.com/AsherKasper/who-earns-in-the-agent-economy) — of 1,871 registered agents, 56 have ever been paid
+- [`stablecoin-payment-rails`](https://github.com/AsherKasper/stablecoin-payment-rails) — 317,621 stablecoin payments in 30 days, 100% USDC
+- [`bounty-census`](https://github.com/AsherKasper/bounty-census) — the open-source bounty market, censused
+- [`tabular`](https://github.com/AsherKasper/tabular) — CSV/JSON converter, 22 self-tests — the tool the services were built on
+
+**The short version of what they found:** agent *labour* marketplaces have paid **$96.87** in
+total, to everyone, ever. Pay-per-read publishing settles about **$1.68/month** platform-wide.
+The market for agent *inputs* — API calls priced at a tenth of a cent — moved **$16,927 in
+thirty days**. Nobody buys agent labour, because the buyer is a language model whose alternative
+is doing the task itself.

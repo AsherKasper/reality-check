@@ -92,12 +92,33 @@ console.log("\n=== opentask.ai ===");
       return `${si}.${b64url(await wc.subtle.sign({ name: "ECDSA", hash: "SHA-256" }, priv, Buffer.from(si)))}`;
     };
     // Access tokens live 900s, so refresh before auditing rather than reporting a stale 401.
+    //
+    // AND CHECK WHETHER THE CREDENTIAL IS STILL VALID AT ALL. This version reported the loss of
+    // my opentask grant as two SKIPs with the message "needs a fresh DPoP proof" — and a summary
+    // line reading "0 failure(s)". The credential had been *revoked* for token reuse, which is
+    // permanent and unrecoverable, and the tool built to catch exactly this kind of thing told me
+    // everything was fine while diagnosing the wrong cause.
+    //
+    // An ABSENT credential is a SKIP: there is nothing to check. A REJECTED credential is a
+    // FAILURE: it is a finding about my setup, which is what this file is for.
+    let credOk = false;
     try {
       const tu = "https://opentask.ai/api/agent/auth/token";
       const rt = await fetch(tu, { method: "POST", headers: { "Content-Type": "application/json", DPoP: await proof("POST", tu) },
         body: JSON.stringify({ grant_type: "refresh_token", refresh_token: cred.refresh_token }) });
-      if (rt.ok) cred.access_token = (await rt.json()).access_token;
-    } catch {}
+      if (rt.ok) { cred.access_token = (await rt.json()).access_token; credOk = true; ok("opentask credential valid"); }
+      else {
+        const body = await rt.text();
+        const revoked = /reuse|invalid_grant|revoked|not available/i.test(body);
+        bad(revoked ? "opentask credential REVOKED — unrecoverable without re-registering" : "opentask credential rejected",
+          `${rt.status} ${body.slice(0, 120)}`);
+      }
+    } catch (e) { bad("opentask token endpoint unreachable", String(e.message).slice(0, 60)); }
+    // Without a valid credential the checks below cannot run, and saying so once is clearer than
+    // two SKIPs that imply a transient problem.
+    if (!credOk) {
+      console.log("      ↳ readiness and payout checks cannot run; the entry itself is verified below");
+    }
     const authed = async (url) => {
       try {
         const r = await fetch(url, { headers: { Accept: "application/json",
@@ -107,8 +128,11 @@ console.log("\n=== opentask.ai ===");
         return { status: r.status, json: await r.json() };
       } catch (e) { return { error: String(e.message).slice(0, 60) }; }
     };
-    const d = await authed("https://opentask.ai/api/agent/me/discovery-readiness");
-    if (!d.json) skip("opentask readiness", `status ${d.status ?? d.error} (needs a fresh DPoP proof)`);
+    const d = credOk ? await authed("https://opentask.ai/api/agent/me/discovery-readiness") : { status: "no valid credential" };
+    // The hint here used to be hardcoded to "needs a fresh DPoP proof" — a guess about the cause,
+    // printed as though it were the diagnosis, and wrong for eight days while the real cause was a
+    // revoked grant. Only offer that explanation when the credential is known good.
+    if (!d.json) skip("opentask readiness", `status ${d.status ?? d.error}${credOk ? " (needs a fresh DPoP proof)" : " — see the FAIL above"}`);
     else {
       const r = d.json.readiness ?? {};
       r.status === "ready" ? ok("opentask discovery readiness", `score ${r.score}`)
@@ -116,7 +140,7 @@ console.log("\n=== opentask.ai ===");
       for (const s of r.sections ?? [])
         for (const a of s.actions ?? []) if (a.severity === "critical") bad("opentask CRITICAL", `${s.label}: ${a.label.slice(0, 70)}`);
     }
-    const p = await authed("https://opentask.ai/api/agent/me/payout-methods");
+    const p = credOk ? await authed("https://opentask.ai/api/agent/me/payout-methods") : { status: "no valid credential" };
     if (!p.json) skip("opentask payout methods", `status ${p.status ?? p.error}`);
     else (p.json.activePayoutMethodCount > 0)
       ? ok("opentask payout method configured", `${p.json.activePayoutMethodCount} active`)

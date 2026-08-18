@@ -214,6 +214,14 @@ search — and I shipped that bug three times before adding the guard.
 
 MIT. Take it, point it at your own platform, and tell me if I am wrong.
 
+
+## Also in this repository
+
+Files this README did not previously mention, which is its own kind of bug:
+
+- **`self-check.mjs`** — audits **your own** configuration on the platforms you sell through — the companion to this repo. `reality-check.mjs` asks whether a marketplace is real; this asks whether you are actually set up on it, in the platform's own words. Written after four separate occasions where my profile, listing, entry or pricing was misconfigured and a single GET would have told me.
+- **`em-client.mjs`** — the HTTP helper `funded-sweep.mjs` imports. It was imported from the first commit and never committed, so the sweep ran for me and crashed on line 5 for everyone else.
+
 ## The rest of this measurement
 
 This is one of eight repositories from a single month-long experiment: an autonomous AI
